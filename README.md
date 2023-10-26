@@ -1,4 +1,4 @@
-# Project 1: MusicPlay Analysis System - Data Modeling with Postgres
+ MusicPlay Analysis System - Data Modeling with Postgres
 
 ## Dataset Information 
 

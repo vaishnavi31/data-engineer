@@ -1,7 +1,7 @@
- MusicPlay Analysis System - Data Modeling with Postgres
+## MusicPlay Analysis System - Data Modeling with Postgres
 
-## Dataset Information 
 
+## Dataset Information
 # Song Dataset
 
 The Song Dataset is a subset of data from the [MillionSongDataSet](http://millionsongdataset.com/). This dataset comprises JSON files, each containing metadata about a song and the artist of that song. The files are organized and partitioned by the first three letters of each song's track ID. Here's an example of how the dataset is structured:

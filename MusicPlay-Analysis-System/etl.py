@@ -112,7 +112,7 @@ def main():
     - Finally, Close the connection
     """
     
-    conn = psycopg2.connect("host=127.0.0.1 dbname=vaish user=postgres password=Student")
+    conn = psycopg2.connect("host=127.0.0.1 dbname=postgres user=postgres password=Student")
     cur = conn.cursor()
 
     process_data(cur, conn, filepath='data/song_data', func=process_song_file)

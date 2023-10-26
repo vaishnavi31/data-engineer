@@ -22,6 +22,7 @@ def create_database():
     
     # connect to sparkify database
     conn = psycopg2.connect("host=127.0.0.1 dbname=postgres user=postgres password=Student")
+    print("connecting to database")
     cur = conn.cursor()
     
     return cur, conn
@@ -32,6 +33,7 @@ def drop_tables(cur, conn):
     Drops each table using the queries in `drop_table_queries` list.
     """
     for query in drop_table_queries:
+        print("executing drop")
         cur.execute(query)
         conn.commit()
 
@@ -41,6 +43,7 @@ def create_tables(cur, conn):
     Creates each table using the queries in `create_table_queries` list. 
     """
     for query in create_table_queries:
+        print("executing create")
         cur.execute(query)
         conn.commit()
 

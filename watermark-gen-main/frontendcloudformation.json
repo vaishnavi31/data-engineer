@@ -1,0 +1,34 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Resources": {
+        "watermarksecurity": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Security group for EC2 instance",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 443,
+                        "ToPort": 443,
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ]
+            }
+        },
+        "groupDotsInstance": {
+            "Type": "AWS::EC2::Instance",
+            "Properties": {
+                "InstanceType": "t2.micro",
+                "ImageId": "ami-0f34c5ae932e6f0e4",
+                "SecurityGroups": [
+                    {
+                        "Ref": "watermarksecurity"
+                    }
+                ],
+                   "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Sub": "#!/bin/bash -xe\nyum update -y\nyum install -y docker\nservice docker start\nusermod -a -G docker ec2-user\ndocker run -p 443:80 sankeerthsharma/mark"}}
+            }
+        }
+    }
+}

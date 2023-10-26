@@ -1,0 +1,389 @@
+{
+   "AWSTemplateFormatVersion":"2010-09-09",
+   "Description":"AWS CloudFormation Template forbackend",
+   "Resources":{
+      "SNSResourceName":{
+         "Type":"AWS::SNS::Topic",
+         "Properties":{
+            "DisplayName":"Watermark Report",
+            "TopicName":"watermark-sns"
+         }
+      },
+      "MyQueue":{
+         "Properties":{
+            "QueueName":"watermark-sqs"
+         },
+         "Type":"AWS::SQS::Queue"
+      },
+      "Watermarkprovider":{
+         "Type":"AWS::Lambda::Function",
+         "Properties":{
+            "FunctionName":"Watermark-provider",
+            "Code":{
+               "S3Bucket":"lambda-jars-a3",
+               "S3Key":"LambdaForProfile-1.0-SNAPSHOT.jar"
+            },
+            "Description":"Used to send subscription and send emails for watermark pdf",
+            "Handler":"org.example.badhri::handleRequest",
+            "Role":"arn:aws:iam::520835858968:role/LSD-Serverless-A3",
+            "Runtime":"java17",
+            "Timeout":120
+         }
+      },
+      "watermarkSubscriber":{
+         "Type":"AWS::Lambda::Function",
+         "Properties":{
+            "FunctionName":"Watermark-Subscriber",
+            "Code":{
+               "S3Bucket":"lambda-jars-a3",
+               "S3Key":"LambdaForProfile-1.0-SNAPSHOT.jar"
+            },
+            "Description":"Used to send subscription mail initially",
+            "Handler":"org.example.MyTopicSubscriptionHandler::handleRequest",
+            "Role":"arn:aws:iam::520835858968:role/LSD-Serverless-A3",
+            "Runtime":"java17",
+            "Timeout":120
+         }
+      },
+      "watermarkEmailSender":{
+         "Type":"AWS::Lambda::Function",
+         "Properties":{
+            "FunctionName":"watermark-email-sender",
+            "Role":"arn:aws:iam::520835858968:role/LSD-Serverless-A3",
+            "Timeout":30,
+            "Runtime":"python3.10",
+            "PackageType":"Zip",
+            "Handler":"index.lambda_handler",
+            "Code":{
+                "ZipFile": "import json\nimport boto3\n\ndef lambda_handler(event, context):\n    sqs_client = boto3.client('sqs')\n    sns_client = boto3.client('sns')\n    \n    record = event['Records'][0]\n    \n    msg_body_str = record['body']\n    msg_body = json.loads(msg_body_str)\n    print(\"Msg Body:\", msg_body)\n    s3PreSignedUrl = msg_body.get('s3PreSignedUrl')\n    email = msg_body.get('email')\n    \n    print(\"Email:\", email)\n    print(\"s3PreSignedUrl:\", s3PreSignedUrl)\n    \n    if email and s3PreSignedUrl:\n        sns_message = f\"s3PreSignedUrl Information: {s3PreSignedUrl}\"\n        \n        topic_arn = 'arn:aws:sns:us-east-1:520835858968:watermark-sns'\n        \n        response = sns_client.publish(\n            TargetArn=topic_arn,\n            Message=sns_message,\n            MessageAttributes={\n                'email': {\n                    'DataType': 'String',\n                    'StringValue': email\n                }\n            }\n        )\n        \n        print(f\"Message sent to {email}: {sns_message}\")\n    \n    receipt_handle = record['receiptHandle']\n    queue_url = 'https://sqs.us-east-1.amazonaws.com/520835858968/watermark-sqs'\n    sqs_client.delete_message(QueueUrl=queue_url, ReceiptHandle=receipt_handle)"
+            }
+         }
+      },
+      "lambdaEventSourceMapping":{
+         "Type":"AWS::Lambda::EventSourceMapping",
+         "Properties":{
+            "BatchSize":1,
+            "EventSourceArn":"arn:aws:sqs:us-east-1:520835858968:watermark-sqs",
+            "FunctionName":{
+               "Ref":"watermarkEmailSender"
+            }
+         }
+      },
+      "S3Bucket": {
+         "Type": "AWS::S3::Bucket",
+         "Properties": {
+             "BucketName": "watermarkfileholder"
+         }
+     },
+     "watermarkApi": {
+      "Type": "AWS::ApiGateway::RestApi",
+      "Properties": {
+          "Name": "watermark-api",
+          "EndpointConfiguration": {
+              "Types": [
+                  "REGIONAL"
+              ]
+          }
+      }
+  },
+  "watermarkApiSubscribe": {
+      "Type": "AWS::ApiGateway::Resource",
+      "Properties": {
+          "RestApiId": {
+              "Ref": "watermarkApi"
+          },
+          "ParentId": {
+              "Fn::GetAtt": [
+                  "watermarkApi",
+                  "RootResourceId"
+              ]
+          },
+          "PathPart": "subscribe"
+      },
+      "DependsOn": [
+          "watermarkApi"
+      ]
+  },
+  "watermarkApiInvite": {
+      "Type": "AWS::ApiGateway::Resource",
+      "Properties": {
+          "RestApiId": {
+              "Ref": "watermarkApi"
+          },
+          "ParentId": {
+              "Fn::GetAtt": [
+                  "watermarkApi",
+                  "RootResourceId"
+              ]
+          },
+          "PathPart": "invite"
+      },
+      "DependsOn": [
+          "watermarkApi"
+      ]
+  },
+  "subscribeCors": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+          "ResourceId": {
+              "Ref": "watermarkApiSubscribe"
+          },
+          "RestApiId": {
+              "Ref": "watermarkApi"
+          },
+          "AuthorizationType": "NONE",
+          "HttpMethod": "OPTIONS",
+          "Integration": {
+              "Type": "MOCK",
+              "IntegrationResponses": [
+                  {
+                      "ResponseParameters": {
+                          "method.response.header.Access-Control-Allow-Headers": "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+                          "method.response.header.Access-Control-Allow-Methods": "'GET,POST,PUT,DELETE,OPTIONS'",
+                          "method.response.header.Access-Control-Allow-Origin": "'*'"
+                      },
+                      "ResponseTemplates": {
+                          "application/json": ""
+                      },
+                      "StatusCode": "200"
+                  }
+              ],
+              "PassthroughBehavior": "NEVER",
+              "RequestTemplates": {
+                  "application/json": "{\"statusCode\": 200}"
+              }
+          },
+          "MethodResponses": [
+              {
+                  "ResponseModels": {
+                      "application/json": "Empty"
+                  },
+                  "ResponseParameters": {
+                      "method.response.header.Access-Control-Allow-Headers": true,
+                      "method.response.header.Access-Control-Allow-Methods": true,
+                      "method.response.header.Access-Control-Allow-Origin": true
+                  },
+                  "StatusCode": "200"
+              }
+          ]
+      }
+  },
+  "inviteCors": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+          "ResourceId": {
+              "Ref": "watermarkApiInvite"
+          },
+          "RestApiId": {
+              "Ref": "watermarkApi"
+          },
+          "AuthorizationType": "NONE",
+          "HttpMethod": "OPTIONS",
+          "Integration": {
+              "Type": "MOCK",
+              "IntegrationResponses": [
+                  {
+                      "ResponseParameters": {
+                          "method.response.header.Access-Control-Allow-Headers": "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+                          "method.response.header.Access-Control-Allow-Methods": "'GET,POST,PUT,DELETE,OPTIONS'",
+                          "method.response.header.Access-Control-Allow-Origin": "'*'"
+                      },
+                      "ResponseTemplates": {
+                          "application/json": ""
+                      },
+                      "StatusCode": "200"
+                  }
+              ],
+              "PassthroughBehavior": "NEVER",
+              "RequestTemplates": {
+                  "application/json": "{\"statusCode\": 200}"
+              }
+          },
+          "MethodResponses": [
+              {
+                  "ResponseModels": {
+                      "application/json": "Empty"
+                  },
+                  "ResponseParameters": {
+                      "method.response.header.Access-Control-Allow-Headers": true,
+                      "method.response.header.Access-Control-Allow-Methods": true,
+                      "method.response.header.Access-Control-Allow-Origin": true
+                  },
+                  "StatusCode": "200"
+              }
+          ]
+      }
+  },
+  "SubscribeEndpoint": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+          "ResourceId": {
+              "Ref": "watermarkApiSubscribe"
+          },
+          "RestApiId": {
+              "Ref": "watermarkApi"
+          },
+          "AuthorizationType": "NONE",
+          "HttpMethod": "POST",
+          "Integration": {
+              "Type": "AWS",
+              "IntegrationHttpMethod": "POST",
+              "Uri": {
+                  "Fn::Sub": [
+                      "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SUBSCRIBE_LAMBDA}/invocations",
+                      {
+                          "SUBSCRIBE_LAMBDA": {
+                              "Fn::GetAtt": [
+                                  "watermarkSubscriber",
+                                  "Arn"
+                              ]
+                          }
+                      }
+                  ]
+              },
+              "IntegrationResponses": [
+                  {
+                      "StatusCode": 200,
+                      "ResponseTemplates": {
+                          "application/json": "$input.json('$')"
+                      },
+                      "ResponseParameters": {
+                          "method.response.header.Access-Control-Allow-Headers": "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+                          "method.response.header.Access-Control-Allow-Methods": "'GET,POST,PUT,DELETE,OPTIONS'",
+                          "method.response.header.Access-Control-Allow-Origin": "'*'"
+                      }
+                  }
+              ],
+              "RequestTemplates": {
+                  "application/json": "$input.json('$')"
+              }
+          },
+          "RequestParameters": {
+              "method.request.querystring.name": false
+          },
+          "MethodResponses": [
+              {
+                  "ResponseParameters": {
+                      "method.response.header.Access-Control-Allow-Headers": true,
+                      "method.response.header.Access-Control-Allow-Methods": true,
+                      "method.response.header.Access-Control-Allow-Origin": true
+                  },
+                  "StatusCode": "200"
+              }
+          ]
+      },
+      "DependsOn": [
+          "watermarkApiSubscribe",
+          "watermarkSubscriber"
+      ]
+  },
+  "InviteEndpoint": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+          "ResourceId": {
+              "Ref": "watermarkApiInvite"
+          },
+          "RestApiId": {
+              "Ref": "watermarksecurityAPi"
+          },
+          "AuthorizationType": "NONE",
+          "HttpMethod": "POST",
+          "Integration": {
+              "Type": "AWS",
+              "IntegrationHttpMethod": "POST",
+              "Uri": {
+                  "Fn::Sub": [
+                      "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${INVITE_LAMBDA}/invocations",
+                      {
+                          "INVITE_LAMBDA": {
+                              "Fn::GetAtt": [
+                                  "Watermarkprovider",
+                                  "Arn"
+                              ]
+                          }
+                      }
+                  ]
+              },
+              "IntegrationResponses": [
+                  {
+                      "StatusCode": 200,
+                      "ResponseTemplates": {
+                          "application/json": "$input.json('$')"
+                      },
+                      "ResponseParameters": {
+                          "method.response.header.Access-Control-Allow-Headers": "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+                          "method.response.header.Access-Control-Allow-Methods": "'GET,POST,PUT,DELETE,OPTIONS'",
+                          "method.response.header.Access-Control-Allow-Origin": "'*'"
+                      }
+                  }
+              ],
+              "RequestTemplates": {
+                  "application/json": "$input.json('$')"
+              }
+          },
+          "RequestParameters": {
+              "method.request.querystring.name": false
+          },
+          "MethodResponses": [
+              {
+                  "ResponseParameters": {
+                      "method.response.header.Access-Control-Allow-Headers": true,
+                      "method.response.header.Access-Control-Allow-Methods": true,
+                      "method.response.header.Access-Control-Allow-Origin": true
+                  },
+                  "StatusCode": "200"
+              }
+          ]
+      },
+      "DependsOn": [
+          "watermarksecurityAPiInvite",
+          "Watermarkprovider"
+      ]
+  },
+  "watermarksecurityAPiDeployment": {
+      "Type": "AWS::ApiGateway::Deployment",
+      "Properties": {
+          "RestApiId": {
+              "Ref": "watermarksecurityAPi"
+          },
+          "StageName": "production"
+      },
+      "DependsOn": [
+          "watermarksecurityAPiSubscribeEndpoint",
+          "watermarksecurityAPiInviteEndpoint"
+      ]
+  },
+  "watermarksecurityAPiSubscribePermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+          "FunctionName": {
+              "Ref": "watermarkSubscriber"
+          },
+          "Action": "lambda:InvokeFunction",
+          "Principal": "apigateway.amazonaws.com",
+          "SourceArn": {
+              "Fn::Sub": "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${watermarksecurityAPi}/*/*/*"
+          }
+      },
+      "DependsOn": [
+          "watermarksecurityAPiDeployment"
+      ]
+  },
+  "watermarksecurityAPiInvitePermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+          "FunctionName": {
+              "Ref": "Watermarkprovider"
+          },
+          "Action": "lambda:InvokeFunction",
+          "Principal": "apigateway.amazonaws.com",
+          "SourceArn": {
+              "Fn::Sub": "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${watermarksecurityAPi}/*/*/*"
+          }
+      },
+      "DependsOn": [
+          "watermarksecurityAPiDeployment"
+      ]
+  }
+   }
+}
